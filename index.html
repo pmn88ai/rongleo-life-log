@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <script>
+      // Set the theme before first paint so switching to Tối/Sang trọng
+      // never flashes the light theme on load (App.jsx re-applies this
+      // from React state afterwards, this is just the pre-paint guess).
+      try {
+        var raw = localStorage.getItem('rongleo_life_log');
+        var theme = raw && JSON.parse(raw).settings && JSON.parse(raw).settings.theme;
+        document.documentElement.dataset.theme = theme || 'light';
+      } catch (e) {}
+    </script>
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="Quan Sát — một chạm để ghi lại cuộc sống." />
+    <meta name="theme-color" content="#fafaf9" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Quan Sát" />
+    <title>Quan Sát</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

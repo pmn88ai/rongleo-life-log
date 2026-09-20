@@ -1,0 +1,14 @@
+node_modules/
+dist/
+dev-dist/
+.env
+.env.local
+.env.*.local
+*.log
+test-results/
+playwright-report/
+
+# Old pre-v2.0 source kept locally for reference during the habit-tracker →
+# Life Event Logger rewrite; unused by the app (nothing under src/ imports
+# it) and not meant to ship in the public repo.
+rongleo-habit-tracker/
