@@ -25,8 +25,13 @@ export const cloudRepository = {
     const { error } = await supabase.from('event_definitions').upsert(definitionToCloudRow(def, userId));
     if (error) throw error;
   },
+  // Soft delete (tombstone), not a real DELETE: another signed-in device's
+  // periodic pull (App.jsx pullFromCloud → mergeCloudDown) needs to be able
+  // to tell "this id was deleted elsewhere" apart from "this id never
+  // existed" so it can remove its own stale local copy. A real DELETE gives
+  // no such signal — the row just silently stops coming back from fetchAll.
   async deleteDefinition(id, userId) {
-    const { error } = await supabase.from('event_definitions').delete().eq('id', id).eq('user_id', userId);
+    const { error } = await supabase.from('event_definitions').update({ deleted_at: new Date().toISOString() }).eq('id', id).eq('user_id', userId);
     if (error) throw error;
   },
   async upsertEvent(event, userId) {
@@ -34,7 +39,7 @@ export const cloudRepository = {
     if (error) throw error;
   },
   async deleteEvent(id, userId) {
-    const { error } = await supabase.from('events').delete().eq('id', id).eq('user_id', userId);
+    const { error } = await supabase.from('events').update({ deleted_at: new Date().toISOString() }).eq('id', id).eq('user_id', userId);
     if (error) throw error;
   },
 

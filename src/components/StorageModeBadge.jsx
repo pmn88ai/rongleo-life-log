@@ -8,7 +8,7 @@ import { LoginModal } from './LoginModal.jsx';
 // put a large warning/banner on every screen"). Tapping it is the one and
 // only entry point into login/account/cloud concepts — everything else
 // about Capture stays exactly as v2.1.
-export function StorageModeBadge({ toast }) {
+export function StorageModeBadge({ toast, onSyncNow }) {
   const { status, signOut } = useAuth();
   const [pendingCount, setPendingCount] = useState(0);
   const [infoOpen, setInfoOpen] = useState(false);
@@ -43,6 +43,7 @@ export function StorageModeBadge({ toast }) {
           onClose={() => setInfoOpen(false)}
           onOpenLogin={() => { setInfoOpen(false); setLoginOpen(true); }}
           onLogout={handleLogout}
+          onSyncNow={onSyncNow}
         />
       )}
 

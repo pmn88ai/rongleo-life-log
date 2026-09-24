@@ -19,7 +19,7 @@ const TODAY_STREAM_LIMIT = 15;
 // tapping actually recorded something (§5 Today Stream, §12 feedback loop).
 export function CapturePage({
   definitions, events, onAddEvent, onOpenAddEvent, onOpenManage, toast, onUndoEvent,
-  onSaveEvent, onDeleteEvent, onGoToTimeline, theme, onSetTheme,
+  onSaveEvent, onDeleteEvent, onGoToTimeline, theme, onSetTheme, onSyncNow,
 }) {
   const [customizeTarget, setCustomizeTarget] = useState(null);
   const [openEvent, setOpenEvent] = useState(null);
@@ -61,7 +61,7 @@ export function CapturePage({
             {fmtFullDate(new Date())}{todayEvents.length > 0 ? ` · ${todayEvents.length} sự kiện hôm nay` : ''}
           </p>
           <div className="mt-1.5">
-            <StorageModeBadge toast={toast} />
+            <StorageModeBadge toast={toast} onSyncNow={onSyncNow} />
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">

@@ -30,7 +30,7 @@ npm run dev       # http://localhost:5173
 Chỉ cần nếu muốn bật đăng nhập quản trị viên + đồng bộ Supabase:
 
 1. Tạo project trên [Supabase](https://supabase.com) (hoặc dùng project sẵn có).
-2. Chạy migration `supabase/migrations/0001_life_log_cloud.sql` trên project đó (SQL Editor hoặc CLI).
+2. Chạy **lần lượt theo thứ tự** toàn bộ file trong `supabase/migrations/` trên project đó (SQL Editor hoặc CLI): `0001_life_log_cloud.sql` rồi `0002_soft_delete.sql`. Nếu project đã chạy 0001 từ trước, chỉ cần chạy thêm 0002 (additive, không đụng dữ liệu sẵn có).
 3. Tạo tài khoản quản trị viên qua **Supabase Dashboard → Authentication** (không tạo qua code, để không lộ mật khẩu/service key trong ứng dụng).
 4. Copy `.env.example` → `.env.local`, điền `VITE_SUPABASE_URL` và `VITE_SUPABASE_ANON_KEY` (lấy ở Project Settings → API — chỉ dùng **anon key**, không bao giờ dùng `service_role`).
 5. Restart `npm run dev`.

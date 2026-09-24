@@ -20,7 +20,7 @@ const TABS = [
 export function ManagePage({
   definitions, state, onClose, onOpenAdd,
   onToggleFavorite, onUpdateDefinition, onDuplicateDefinition, onDeleteDefinition,
-  onExport, onImport, onResetAllData, theme, onSetTheme, toast,
+  onExport, onImport, onResetAllData, theme, onSetTheme, onSyncNow, toast,
 }) {
   const [tab, setTab] = useState('events');
   const [editTarget, setEditTarget] = useState(null);
@@ -315,6 +315,7 @@ export function ManagePage({
           onClose={() => setStorageInfoOpen(false)}
           onOpenLogin={() => { setStorageInfoOpen(false); setLoginOpen(true); }}
           onLogout={handleLogout}
+          onSyncNow={onSyncNow}
         />
       )}
       {loginOpen && <LoginModal onClose={() => setLoginOpen(false)} />}

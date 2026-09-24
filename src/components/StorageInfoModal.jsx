@@ -1,11 +1,21 @@
+import { useState } from 'react';
 import { Modal } from './Modal.jsx';
 import { useAuth } from '../auth/AuthProvider.jsx';
 
 // The one place Supabase/cloud concepts surface in plain Vietnamese (spec
 // v2.2 §9, §25) — reached by tapping the small storage badge, never forced
 // in front of Capture. Shows different copy for guest vs authenticated.
-export function StorageInfoModal({ pendingCount, onOpenLogin, onLogout, onClose }) {
+export function StorageInfoModal({ pendingCount, onOpenLogin, onLogout, onSyncNow, onClose }) {
   const { status, user } = useAuth();
+  const [syncState, setSyncState] = useState('idle'); // idle | syncing | done
+
+  async function handleSyncNow() {
+    if (!onSyncNow || syncState === 'syncing') return;
+    setSyncState('syncing');
+    await onSyncNow();
+    setSyncState('done');
+    setTimeout(() => setSyncState('idle'), 2000);
+  }
 
   if (status === 'authenticated') {
     return (
@@ -23,6 +33,15 @@ export function StorageInfoModal({ pendingCount, onOpenLogin, onLogout, onClose 
               ? `⏳ Đang chờ đồng bộ ${pendingCount} thay đổi...`
               : '☁️ Đã đồng bộ'}
           </p>
+          {onSyncNow && (
+            <button
+              onClick={handleSyncNow}
+              disabled={syncState === 'syncing'}
+              className="w-full py-3 rounded-xl border border-default text-body text-sm font-medium hover:bg-app transition-all active:scale-95 disabled:opacity-50"
+            >
+              {syncState === 'syncing' ? 'Đang lấy dữ liệu mới nhất...' : syncState === 'done' ? '✓ Đã lấy dữ liệu mới nhất' : 'Đồng bộ ngay'}
+            </button>
+          )}
           <button
             onClick={onLogout}
             className="w-full py-3 rounded-xl border border-default text-body text-sm font-medium hover:bg-app transition-all active:scale-95"

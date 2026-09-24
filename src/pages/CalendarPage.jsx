@@ -2,17 +2,24 @@ import { useEffect, useMemo, useState } from 'react';
 import { CalendarGrid } from '../components/CalendarGrid.jsx';
 import { TimelineRow } from '../components/TimelineItem.jsx';
 import { EventDetailModal } from '../components/EventDetailModal.jsx';
+import { GroupedByActivity } from '../components/GroupedByActivity.jsx';
 import { getEventCountsByDay, getEventsForDay, sortByTimestampDesc } from '../domain/selectors.js';
 import { fmtFullDate, todayKey } from '../utils/date.js';
 
 const PAGE_SIZE = 60;
 
-export function CalendarPage({ events, onSaveEvent, onDeleteEvent }) {
+const VIEW_MODES = [
+  { id: 'chrono', label: 'Dòng thời gian' },
+  { id: 'grouped', label: 'Theo hoạt động' },
+];
+
+export function CalendarPage({ definitions, events, onSaveEvent, onDeleteEvent }) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
   const [selectedKey, setSelectedKey] = useState(todayKey());
   const [openEvent, setOpenEvent] = useState(null);
+  const [viewMode, setViewMode] = useState('chrono');
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   useEffect(() => { setVisibleCount(PAGE_SIZE); }, [selectedKey]);
@@ -51,11 +58,28 @@ export function CalendarPage({ events, onSaveEvent, onDeleteEvent }) {
         <p className="text-xs text-muted mt-0.5">Sự kiện trong ngày ({dayEvents.length})</p>
       </div>
 
+      {rows.length > 0 && (
+        <div className="flex gap-2">
+          {VIEW_MODES.map(m => (
+            <button
+              key={m.id}
+              onClick={() => setViewMode(m.id)}
+              className={`flex-1 py-2 rounded-xl text-xs font-medium border transition-all ${
+                viewMode === m.id ? 'bg-ink text-on-ink border-ink' : 'bg-surface border-default text-secondary'}`}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {rows.length === 0 ? (
         <div className="text-center py-10 text-muted">
           <p className="text-3xl mb-2">🌱</p>
           <p className="text-sm">Không có sự kiện nào trong ngày này.</p>
         </div>
+      ) : viewMode === 'grouped' ? (
+        <GroupedByActivity events={rows} definitions={definitions} />
       ) : (
         <div className="space-y-2">
           {visibleRows.map(event => (

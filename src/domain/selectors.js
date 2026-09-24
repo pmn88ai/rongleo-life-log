@@ -110,6 +110,27 @@ export function searchDefinitions(definitions, query) {
   );
 }
 
+// "Theo hoạt động" view (Dòng thời gian + Lịch): the same events grouped by
+// which EventDefinition logged them, newest-first-used ordering swapped for
+// most-frequent-first (matches Thống kê's own sort). Groups by id but keeps
+// the event's own name/emoji SNAPSHOT for display, so a deleted definition's
+// history still groups and renders correctly (same principle as everywhere
+// else events outlive their definition).
+export function groupEventsByDefinition(events, definitions) {
+  const defsById = new Map(definitions.map(d => [d.id, d]));
+  const groups = new Map();
+  const order = [];
+  for (const e of events) {
+    const key = e.eventDefinitionId;
+    if (!groups.has(key)) {
+      groups.set(key, { id: key, name: e.nameSnapshot, emoji: e.emojiSnapshot, definition: defsById.get(key) || null, events: [] });
+      order.push(key);
+    }
+    groups.get(key).events.push(e);
+  }
+  return order.map(key => groups.get(key)).sort((a, b) => b.events.length - a.events.length);
+}
+
 export function searchEvents(events, query) {
   if (!query || !query.trim()) return events;
   return events.filter(e =>

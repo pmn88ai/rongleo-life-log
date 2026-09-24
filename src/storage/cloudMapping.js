@@ -18,6 +18,10 @@ export function eventToCloudRow(event, userId) {
     category_snapshot: event.categorySnapshot ?? null,
     created_at: event.createdAt || new Date().toISOString(),
     updated_at: new Date().toISOString(),
+    // Explicit null (not omitted): an upsert always means "this record is
+    // active now" — clears a prior tombstone if the same id was soft-deleted
+    // and is being re-created (e.g. deleted then re-added from the library).
+    deleted_at: null,
   };
 }
 
@@ -35,6 +39,7 @@ export function eventFromCloudRow(row) {
     emojiSnapshot: row.emoji_snapshot,
     categorySnapshot: row.category_snapshot,
     createdAt: row.created_at,
+    deletedAt: row.deleted_at,
   };
 }
 
@@ -53,6 +58,8 @@ export function definitionToCloudRow(def, userId) {
     active: def.active !== false,
     created_at: def.createdAt || new Date().toISOString(),
     updated_at: new Date().toISOString(),
+    // See eventToCloudRow: explicit null clears a prior tombstone on revive.
+    deleted_at: null,
   };
 }
 
@@ -69,5 +76,6 @@ export function definitionFromCloudRow(row) {
     favorite: row.favorite,
     active: row.active,
     createdAt: row.created_at,
+    deletedAt: row.deleted_at,
   };
 }

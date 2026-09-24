@@ -3,7 +3,7 @@ import { Icon } from '../components/Icon.jsx';
 import { EmojiGlyph } from '../components/EmojiGlyph.jsx';
 import { StatisticCard } from '../components/StatisticCard.jsx';
 import { filterEventsByRange } from '../domain/selectors.js';
-import { computeStatsForDefinition } from '../domain/statistics.js';
+import { computeStatsForDefinition, summaryHeadline } from '../domain/statistics.js';
 
 const RANGES = [
   { id: '7d', label: '7 ngày' },
@@ -11,17 +11,6 @@ const RANGES = [
   { id: '90d', label: '90 ngày' },
   { id: 'all', label: 'Tất cả' },
 ];
-
-function summaryHeadline(stats) {
-  switch (stats.type) {
-    case 'moment': return `${stats.total} lần`;
-    case 'count': return `${stats.total} ${stats.unit || ''}`.trim();
-    case 'duration': return `${stats.totalMinutes} phút`;
-    case 'measurement': return stats.latest != null ? `${stats.latest} ${stats.unit || ''}`.trim() : 'Chưa có dữ liệu';
-    case 'rating': return stats.average != null ? `TB ${stats.average}/5` : 'Chưa có dữ liệu';
-    default: return '';
-  }
-}
 
 export function StatisticsPage({ definitions, events }) {
   const [range, setRange] = useState('7d');

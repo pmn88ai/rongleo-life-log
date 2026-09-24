@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BottomNav } from '../components/BottomNav.jsx';
 import { ToastHost, useToast } from '../components/Toast.jsx';
 import { Onboarding } from '../components/Onboarding.jsx';
@@ -16,7 +16,7 @@ import { getStarterDefinitions } from '../data/seed.js';
 import { eventRepository } from '../storage/eventRepository.js';
 import { cloudRepository } from '../storage/cloudRepository.js';
 import { syncQueue } from '../storage/syncQueue.js';
-import { planCloudSync, mergeLocalAndCloud } from '../domain/cloudSync.js';
+import { planCloudSync, mergeLocalAndCloud, mergeCloudDown, stripDeleted } from '../domain/cloudSync.js';
 import { AuthProvider, useAuth } from '../auth/AuthProvider.jsx';
 import { uid } from '../utils/id.js';
 
@@ -100,9 +100,14 @@ function AppShell() {
   useEffect(() => {
     if (!justSignedIn || !userId) return;
     let cancelled = false;
-    cloudRepository.fetchAll(userId).then(cloud => {
+    cloudRepository.fetchAll(userId).then(rawCloud => {
       if (cancelled) return;
-      const plan = planCloudSync(state, cloud);
+      // stripDeleted here too (not just inside planCloudSync) so the `cloud`
+      // object attached to migrationPlan — which handleMigrationCloudOnly/
+      // handleMigrationRestore later replace local state with wholesale —
+      // never contains a tombstoned row either.
+      const cloud = stripDeleted(rawCloud);
+      const plan = planCloudSync(state, rawCloud);
       if (plan.kind !== 'none') setMigrationPlan({ ...plan, cloud });
       clearJustSignedIn();
     }).catch(err => {
@@ -124,6 +129,55 @@ function AppShell() {
     function onOnline() { if (userId) syncQueue.flush(userId); }
     window.addEventListener('online', onOnline);
     return () => window.removeEventListener('online', onOnline);
+  }, [userId]);
+
+  // Ongoing CLOUD → LOCAL pull, separate from the one-time login merge
+  // above. Without this, a second signed-in device only ever reflects
+  // whatever cloud looked like at ITS OWN first login — anything
+  // created/edited on another device afterwards never arrives, which is
+  // exactly the "máy tính không đồng bộ với điện thoại" report this fixes.
+  // Runs once as soon as a session resolves to authenticated (covers a
+  // RESTORED session on reload, which justSignedIn deliberately skips —
+  // that case is handled by the effect above instead), then again on
+  // focus/visibility and periodically while the tab stays open. Known gap:
+  // still can't propagate deletes made on another device (see cloudSync.js).
+  const pulledForUserRef = useRef(null);
+  async function pullFromCloud() {
+    if (!userId) return;
+    try {
+      const cloud = await cloudRepository.fetchAll(userId);
+      setState(s => {
+        const merged = mergeCloudDown(s, cloud);
+        return { ...s, eventDefinitions: merged.eventDefinitions, events: merged.events };
+      });
+    } catch (err) {
+      console.error('Không thể đồng bộ dữ liệu mới từ đám mây:', err);
+    }
+  }
+  useEffect(() => {
+    if (!userId || justSignedIn || migrationPlan) return;
+    if (pulledForUserRef.current === userId) return;
+    pulledForUserRef.current = userId;
+    pullFromCloud();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, justSignedIn, migrationPlan]);
+  useEffect(() => {
+    if (!userId) return;
+    function onFocusOrVisible() {
+      if (document.visibilityState === 'hidden') return;
+      pullFromCloud();
+    }
+    window.addEventListener('focus', onFocusOrVisible);
+    document.addEventListener('visibilitychange', onFocusOrVisible);
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') pullFromCloud();
+    }, 60000);
+    return () => {
+      window.removeEventListener('focus', onFocusOrVisible);
+      document.removeEventListener('visibilitychange', onFocusOrVisible);
+      clearInterval(interval);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   const { eventDefinitions: definitions, events } = state;
@@ -277,14 +331,15 @@ function AppShell() {
               onGoToTimeline={() => setPage('timeline')}
               theme={theme}
               onSetTheme={handleSetTheme}
+              onSyncNow={pullFromCloud}
               toast={toast}
             />
           )}
           {page === 'timeline' && (
-            <TimelinePage events={events} onSaveEvent={handleSaveEvent} onDeleteEvent={handleDeleteEvent} />
+            <TimelinePage definitions={definitions} events={events} onSaveEvent={handleSaveEvent} onDeleteEvent={handleDeleteEvent} />
           )}
           {page === 'calendar' && (
-            <CalendarPage events={events} onSaveEvent={handleSaveEvent} onDeleteEvent={handleDeleteEvent} />
+            <CalendarPage definitions={definitions} events={events} onSaveEvent={handleSaveEvent} onDeleteEvent={handleDeleteEvent} />
           )}
           {page === 'stats' && (
             <StatisticsPage definitions={definitions} events={events} />
@@ -320,6 +375,7 @@ function AppShell() {
           onResetAllData={handleResetAllData}
           theme={theme}
           onSetTheme={handleSetTheme}
+          onSyncNow={pullFromCloud}
           toast={toast}
         />
       )}

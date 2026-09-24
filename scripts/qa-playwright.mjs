@@ -1,6 +1,8 @@
 import { chromium, devices } from '@playwright/test';
 import { mkdirSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { mergeCloudDown, planCloudSync, mergeLocalAndCloud, stripDeleted } from '../src/domain/cloudSync.js';
+import { definitionToCloudRow, eventToCloudRow } from '../src/storage/cloudMapping.js';
 
 const BASE_URL = 'http://localhost:5199';
 const SHOT_DIR = 'C:\\Users\\Hp\\AppData\\Local\\Temp\\claude\\d--WORK-projects-ai-sandbox\\529fabb6-dad4-4bb6-9f1c-2e79270b6c8f\\scratchpad\\qa-screenshots';
@@ -772,6 +774,138 @@ async function runRowDeleteAndResetQA(browser) {
   await context.close();
 }
 
+// "Theo hoạt động" — operator: "xem tập thể dục tổng hay tổng lượng nước
+// uống trong ngày" instead of only a flat chronological list. Same toggle
+// on Dòng thời gian and Lịch, backed by the shared GroupedByActivity +
+// computeStatsForDefinition (same aggregation Thống kê already uses).
+async function runGroupedByActivityQA(browser) {
+  const context = await browser.newContext({ ...devices['iPhone 13'] });
+  const page = await context.newPage();
+  page.setDefaultTimeout(8000);
+  await page.goto(BASE_URL);
+
+  await page.evaluate(() => {
+    const now = new Date();
+    const water = { id: 'water', name: 'Uống nước', emoji: '💧', category: 'body', type: 'count', unit: 'ml', defaultValue: 300, aliases: [], favorite: true, active: true, createdAt: now.toISOString() };
+    const exercise = { id: 'exercise', name: 'Tập thể dục', emoji: '🏃', category: 'movement', type: 'moment', unit: null, defaultValue: null, aliases: [], favorite: true, active: true, createdAt: now.toISOString() };
+    const mkWater = (id, minsAgo) => ({ id, eventDefinitionId: 'water', timestamp: new Date(now.getTime() - minsAgo * 60000).toISOString(), value: 300, unit: 'ml', durationSeconds: null, rating: null, note: '', nameSnapshot: water.name, emojiSnapshot: water.emoji, categorySnapshot: water.category, createdAt: now.toISOString() });
+    const mkExercise = (id, minsAgo) => ({ id, eventDefinitionId: 'exercise', timestamp: new Date(now.getTime() - minsAgo * 60000).toISOString(), value: null, unit: null, durationSeconds: null, rating: null, note: '', nameSnapshot: exercise.name, emojiSnapshot: exercise.emoji, categorySnapshot: exercise.category, createdAt: now.toISOString() });
+    const state = {
+      schemaVersion: 2,
+      eventDefinitions: [water, exercise],
+      events: [mkWater('w1', 10), mkWater('w2', 60), mkWater('w3', 120), mkExercise('x1', 30), mkExercise('x2', 200)],
+      settings: { onboardingSeen: true, theme: 'light' },
+    };
+    localStorage.setItem('rongleo_life_log', JSON.stringify(state));
+  });
+  await page.reload();
+  await page.waitForSelector('h1:has-text("Chuyện gì vừa xảy ra?")');
+
+  // Dòng thời gian
+  await navButton(page, 'Dòng thời gian').click();
+  await page.waitForSelector('h1:has-text("Dòng thời gian")');
+  await page.getByRole('button', { name: 'Theo hoạt động', exact: true }).click();
+  const waterHeadlineTimeline = await page.getByText('900 ml · 3 lần').first().isVisible({ timeout: 2000 }).catch(() => false);
+  record('grouped', 'Timeline "Theo hoạt động" aggregates Uống nước to 900 ml · 3 lần', waterHeadlineTimeline);
+  const exerciseHeadlineTimeline = await page.getByText('2 lần', { exact: true }).first().isVisible({ timeout: 2000 }).catch(() => false);
+  record('grouped', 'Timeline "Theo hoạt động" counts Tập thể dục as 2 lần (moment type, no unit)', exerciseHeadlineTimeline);
+  await shot(page, '14-grouped-timeline.png');
+
+  await page.getByText('Uống nước', { exact: true }).first().click();
+  const expandedCard = await page.getByText('Trung bình/lần').isVisible({ timeout: 2000 }).catch(() => false);
+  record('grouped', 'expanding a grouped row shows the full StatisticCard breakdown', expandedCard);
+
+  await page.locator('main').getByRole('button', { name: 'Dòng thời gian', exact: true }).click();
+  const backToChrono = await page.getByRole('button', { name: 'Xóa sự kiện' }).first().isVisible({ timeout: 2000 }).catch(() => false);
+  record('grouped', 'switching back to Dòng thời gian restores the flat per-event list', backToChrono);
+
+  // Lịch (same seeded events are all "today")
+  await navButton(page, 'Lịch').click();
+  await page.waitForSelector('h1:has-text("Lịch")');
+  await page.getByRole('button', { name: 'Theo hoạt động', exact: true }).click();
+  const waterHeadlineCalendar = await page.getByText('900 ml · 3 lần').first().isVisible({ timeout: 2000 }).catch(() => false);
+  record('grouped', 'Calendar "Theo hoạt động" aggregates the selected day the same way', waterHeadlineCalendar);
+
+  await context.close();
+}
+
+// Pure-logic check for mergeCloudDown (App.jsx's ongoing pull-down sync,
+// fixing the real "máy tính không đồng bộ với điện thoại" report — cloud
+// only ever got fetched ONCE, right after a fresh login, so a second
+// signed-in device never saw anything created/edited afterwards on
+// another device). No browser/network needed since this is a plain
+// function of two arrays; a live two-device round trip against production
+// Supabase is deliberately NOT scripted here — it would write real rows to
+// the operator's actual account with no safe, repeatable way to clean up.
+async function runCloudMergeLogicQA() {
+  const local = {
+    eventDefinitions: [
+      { id: 'water', name: 'Uống nước (local, cũ)' },
+      { id: 'offline_only', name: 'Tạo lúc mất mạng, chưa kịp đẩy lên' },
+    ],
+    events: [
+      { id: 'e1', note: 'ghi chú cũ trên máy này' },
+      { id: 'e_offline', note: 'sự kiện tạo lúc mất mạng, chưa kịp đẩy lên' },
+    ],
+  };
+  const cloud = {
+    definitions: [
+      { id: 'water', name: 'Uống nước (sửa từ điện thoại)' },
+      { id: 'exercise', name: 'Tập thể dục (mới, tạo từ điện thoại)' },
+    ],
+    events: [
+      { id: 'e1', note: 'đã sửa ghi chú từ điện thoại' },
+      { id: 'e2', note: 'sự kiện mới ghi từ điện thoại' },
+    ],
+  };
+  const merged = mergeCloudDown(local, cloud);
+
+  const editPropagated = merged.eventDefinitions.find(d => d.id === 'water')?.name === 'Uống nước (sửa từ điện thoại)';
+  record('cloud-sync', 'pulling picks up an EDIT made on another device (cloud wins on matching id)', editPropagated);
+
+  const additionPropagated = merged.eventDefinitions.some(d => d.id === 'exercise') && merged.events.some(e => e.id === 'e2');
+  record('cloud-sync', 'pulling picks up a NEW definition + event created on another device', additionPropagated);
+
+  const offlineDataPreserved = merged.eventDefinitions.some(d => d.id === 'offline_only') && merged.events.some(e => e.id === 'e_offline');
+  record('cloud-sync', 'pulling never discards a local-only record cloud doesn\'t have yet (not-yet-pushed data survives)', offlineDataPreserved);
+
+  const eventEditPropagated = merged.events.find(e => e.id === 'e1')?.note === 'đã sửa ghi chú từ điện thoại';
+  record('cloud-sync', 'event edits (not just definitions) also propagate from another device', eventEditPropagated);
+
+  // Soft-delete (tombstone) propagation — 0002_soft_delete.sql.
+  const localWithBoth = {
+    eventDefinitions: [{ id: 'water', name: 'Uống nước' }, { id: 'stays', name: 'Không đụng tới' }],
+    events: [{ id: 'e1', note: 'sẽ bị xóa từ điện thoại' }, { id: 'e_stays', note: 'không đụng tới' }],
+  };
+  const cloudWithTombstone = {
+    definitions: [{ id: 'water', name: 'Uống nước', deletedAt: '2026-09-24T00:00:00.000Z' }],
+    events: [{ id: 'e1', note: 'sẽ bị xóa từ điện thoại', deletedAt: '2026-09-24T00:00:00.000Z' }],
+  };
+  const afterDelete = mergeCloudDown(localWithBoth, cloudWithTombstone);
+  const deletePropagated = !afterDelete.eventDefinitions.some(d => d.id === 'water') && !afterDelete.events.some(e => e.id === 'e1');
+  record('cloud-sync', 'a delete made on another device (tombstone) removes the record locally too', deletePropagated);
+  const untouchedSurvived = afterDelete.eventDefinitions.some(d => d.id === 'stays') && afterDelete.events.some(e => e.id === 'e_stays');
+  record('cloud-sync', 'delete propagation only removes the tombstoned id, nothing else', untouchedSurvived);
+
+  // A tombstoned row must never resurrect through the first-login merge
+  // screen (planCloudSync/mergeLocalAndCloud) — stripDeleted() guards both.
+  const rawCloudWithTombstone = { definitions: [{ id: 'gone', name: 'Đã xóa trước khi máy này đăng nhập lần đầu', deletedAt: '2026-09-24T00:00:00.000Z' }], events: [] };
+  const stripped = stripDeleted(rawCloudWithTombstone);
+  record('cloud-sync', 'stripDeleted() removes tombstoned rows', stripped.definitions.length === 0);
+  const emptyLocal = { eventDefinitions: [], events: [] };
+  const plan = planCloudSync(emptyLocal, rawCloudWithTombstone);
+  record('cloud-sync', 'planCloudSync treats an all-tombstoned cloud as empty (kind=none, no restore prompt)', plan.kind === 'none');
+  const loginMerged = mergeLocalAndCloud(emptyLocal, rawCloudWithTombstone);
+  record('cloud-sync', 'mergeLocalAndCloud never resurrects a tombstoned row on first login', loginMerged.eventDefinitions.length === 0);
+
+  // Re-creating the same id after a delete (e.g. re-add from the library)
+  // must clear the tombstone, or the next pull would delete it right back.
+  const revivedRow = definitionToCloudRow({ id: 'water', name: 'Uống nước', emoji: '💧', category: 'body', type: 'count' }, 'user-1');
+  record('cloud-sync', 'upserting a definition explicitly clears deleted_at (revive-on-recreate)', revivedRow.deleted_at === null);
+  const revivedEventRow = eventToCloudRow({ id: 'e1', eventDefinitionId: 'water', timestamp: new Date().toISOString(), nameSnapshot: 'Uống nước', emojiSnapshot: '💧' }, 'user-1');
+  record('cloud-sync', 'upserting an event explicitly clears deleted_at too', revivedEventRow.deleted_at === null);
+}
+
 // v2.2 admin/cloud QA — this environment has no real Supabase project (spec
 // v2.2's own note: inspect/provision that separately), so only the GUEST
 // side of the feature and its "never touches the network" guarantee can be
@@ -858,7 +992,7 @@ async function runBundleSecurityQA() {
 }
 
 const browser = await chromium.launch();
-const runners = [runMobileFunctionalQA, runDesktopResponsiveQA, runLegacyMigrationQA, runPwaQA, runPerformanceQA, runNoCapNoDuplicateQA, runThemeQA, runRowDeleteAndResetQA, runCloudGuestQA, runBundleSecurityQA];
+const runners = [runMobileFunctionalQA, runDesktopResponsiveQA, runLegacyMigrationQA, runPwaQA, runPerformanceQA, runNoCapNoDuplicateQA, runThemeQA, runRowDeleteAndResetQA, runGroupedByActivityQA, runCloudMergeLogicQA, runCloudGuestQA, runBundleSecurityQA];
 for (const fn of runners) {
   try {
     await fn(browser);

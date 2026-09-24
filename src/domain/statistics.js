@@ -99,3 +99,32 @@ export function computeStatsForDefinition(definition, events) {
       return { type: definition.type };
   }
 }
+
+// One-line aggregate headline for a definition's stats — shared by the
+// Thống kê list and the "Theo hoạt động" grouped view (Dòng thời gian +
+// Lịch) so both describe a definition's totals identically.
+export function summaryHeadline(stats) {
+  switch (stats.type) {
+    case 'moment': return `${stats.total} lần`;
+    case 'count': return `${stats.total} ${stats.unit || ''}`.trim();
+    case 'duration': return `${stats.totalMinutes} phút`;
+    case 'measurement': return stats.latest != null ? `${stats.latest} ${stats.unit || ''}`.trim() : 'Chưa có dữ liệu';
+    case 'rating': return stats.average != null ? `TB ${stats.average}/5` : 'Chưa có dữ liệu';
+    default: return '';
+  }
+}
+
+// Best-effort type guess for a group whose original EventDefinition was
+// deleted (only the event's own snapshot fields survive — no type/unit
+// snapshot exists on Event, see eventService.createEvent). Good enough to
+// keep the group's aggregate readable; exact count-vs-measurement can't be
+// recovered without the live definition, so it defaults to "count" (safe
+// to sum) rather than silently dropping the group from the grouped view.
+export function inferDefinitionFromEvents(id, name, emoji, events) {
+  const sample = events[0];
+  let type = EVENT_TYPES.MOMENT;
+  if (sample.rating != null) type = EVENT_TYPES.RATING;
+  else if (sample.durationSeconds != null) type = EVENT_TYPES.DURATION;
+  else if (sample.value != null) type = EVENT_TYPES.COUNT;
+  return { id, name, emoji, type, unit: sample.unit || null };
+}
